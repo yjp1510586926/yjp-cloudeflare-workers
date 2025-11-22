@@ -1,0 +1,19 @@
+{
+  "name": "yjp-cloudeflare-workers",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "GraphQL API for Cloudflare Workers",
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
+

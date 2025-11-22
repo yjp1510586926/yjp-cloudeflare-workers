@@ -1,0 +1,6 @@
+name = "yjp-cloudeflare-workers"
+main = "src/index.js"
+compatibility_date = "2024-11-22"
+
+[env.production]
+name = "yjp-cloudeflare-workers"
