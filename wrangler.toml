@@ -2,5 +2,11 @@ name = "yjp-cloudeflare-workers"
 main = "src/index.js"
 compatibility_date = "2024-11-22"
 
+# D1 数据库配置
+[[d1_databases]]
+binding = "DB"
+database_name = "yjp-database"
+database_id = "41d0ebf5-ea5f-415c-ad94-c14425b2026f"
+
 [env.production]
 name = "yjp-cloudeflare-workers"

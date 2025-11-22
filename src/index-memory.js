@@ -1,9 +1,12 @@
-// 使用 Cloudflare D1 数据库的 GraphQL 服务器实现
-
-// GraphQL 解析器
+// 简单的 GraphQL 解析器（不依赖外部库）
 class GraphQLParser {
   static parseQuery(query) {
+    // 移除注释和多余空格
     const cleanQuery = query.replace(/#[^\n]*/g, '').trim();
+    
+    // 匹配 query 或 mutation（支持带变量的格式）
+    // 例如: mutation CreateUser($name: String!, $email: String!) { ... }
+    // 或: mutation { ... }
     const queryMatch = cleanQuery.match(/query\s*(?:\w+)?\s*(?:\([^)]*\))?\s*\{([\s\S]+)\}/);
     const mutationMatch = cleanQuery.match(/mutation\s*(?:\w+)?\s*(?:\([^)]*\))?\s*\{([\s\S]+)\}/);
     
@@ -16,60 +19,43 @@ class GraphQLParser {
   }
 }
 
-// GraphQL Resolvers（使用 D1 数据库）
+// 模拟数据库
+let users = [
+  { id: '1', name: '张三', email: 'zhangsan@example.com', createdAt: new Date().toISOString() },
+  { id: '2', name: '李四', email: 'lisi@example.com', createdAt: new Date().toISOString() }
+];
+
+// GraphQL Resolvers
 const resolvers = {
-  hello: async () => {
-    return { data: { hello: 'Hello from Cloudflare Workers GraphQL API with D1! 你好！' } };
+  hello: () => {
+    return { data: { hello: 'Hello from Cloudflare Workers GraphQL API! 你好！' } };
   },
   
-  users: async (env) => {
-    try {
-      const { results } = await env.DB.prepare(
-        'SELECT id, name, email, created_at as createdAt FROM users ORDER BY created_at DESC'
-      ).all();
-      return { data: { users: results } };
-    } catch (error) {
-      return { errors: [{ message: `Database error: ${error.message}` }] };
-    }
+  users: () => {
+    return { data: { users } };
   },
   
-  user: async (env, args) => {
-    try {
-      const result = await env.DB.prepare(
-        'SELECT id, name, email, created_at as createdAt FROM users WHERE id = ?'
-      ).bind(args.id).first();
-      return { data: { user: result || null } };
-    } catch (error) {
-      return { errors: [{ message: `Database error: ${error.message}` }] };
-    }
+  user: (args) => {
+    const user = users.find(u => u.id === args.id);
+    return { data: { user } };
   },
   
-  createUser: async (env, args) => {
-    try {
-      // 检查邮箱是否已存在
-      const existing = await env.DB.prepare(
-        'SELECT id FROM users WHERE email = ?'
-      ).bind(args.email).first();
-      
-      if (existing) {
-        return { errors: [{ message: '该邮箱已被使用' }] };
-      }
-      
-      // 插入新用户
-      const result = await env.DB.prepare(
-        'INSERT INTO users (name, email) VALUES (?, ?) RETURNING id, name, email, created_at as createdAt'
-      ).bind(args.name, args.email).first();
-      
-      return { data: { createUser: result } };
-    } catch (error) {
-      return { errors: [{ message: `Database error: ${error.message}` }] };
-    }
+  createUser: (args) => {
+    const newUser = {
+      id: String(users.length + 1),
+      name: args.name,
+      email: args.email,
+      createdAt: new Date().toISOString()
+    };
+    users.push(newUser);
+    return { data: { createUser: newUser } };
   }
 };
 
 // 处理 GraphQL 请求
-async function handleGraphQL(query, variables = {}, env) {
+function handleGraphQL(query, variables = {}) {
   try {
+    // 解析查询
     const parsed = GraphQLParser.parseQuery(query);
     if (!parsed) {
       return { errors: [{ message: 'Invalid query' }] };
@@ -79,19 +65,19 @@ async function handleGraphQL(query, variables = {}, env) {
 
     // Hello 查询
     if (content.includes('hello')) {
-      return await resolvers.hello();
+      return resolvers.hello();
     }
 
     // Users 查询
     if (content.includes('users') && !content.includes('user(')) {
-      return await resolvers.users(env);
+      return resolvers.users();
     }
 
     // User 查询（单个）
     if (content.includes('user(id:')) {
       const idMatch = content.match(/user\(id:\s*"([^"]+)"\)/);
       if (idMatch) {
-        return await resolvers.user(env, { id: idMatch[1] });
+        return resolvers.user({ id: idMatch[1] });
       }
     }
 
@@ -101,9 +87,9 @@ async function handleGraphQL(query, variables = {}, env) {
       const emailMatch = content.match(/email:\s*"([^"]+)"/);
       
       if (variables.name && variables.email) {
-        return await resolvers.createUser(env, { name: variables.name, email: variables.email });
+        return resolvers.createUser({ name: variables.name, email: variables.email });
       } else if (nameMatch && emailMatch) {
-        return await resolvers.createUser(env, { name: nameMatch[1], email: emailMatch[1] });
+        return resolvers.createUser({ name: nameMatch[1], email: emailMatch[1] });
       }
     }
 
@@ -137,7 +123,7 @@ export default {
       if (request.method === 'POST') {
         try {
           const body = await request.json();
-          const result = await handleGraphQL(body.query, body.variables || {}, env);
+          const result = handleGraphQL(body.query, body.variables || {});
 
           return new Response(JSON.stringify(result), {
             headers: {
@@ -171,19 +157,9 @@ export default {
 
     // 健康检查端点
     if (url.pathname === '/health') {
-      // 测试数据库连接
-      let dbStatus = 'unknown';
-      try {
-        await env.DB.prepare('SELECT 1').first();
-        dbStatus = 'connected';
-      } catch (error) {
-        dbStatus = 'error: ' + error.message;
-      }
-
       return new Response(JSON.stringify({ 
         status: 'ok',
-        message: 'GraphQL API is running with D1 database',
-        database: dbStatus,
+        message: 'GraphQL API is running',
         timestamp: new Date().toISOString()
       }), {
         headers: {
@@ -195,7 +171,7 @@ export default {
 
     // 默认路由
     return new Response(JSON.stringify({
-      message: 'Welcome to YJP Cloudflare Workers GraphQL API with D1',
+      message: 'Welcome to YJP Cloudflare Workers GraphQL API',
       endpoints: {
         graphql: '/graphql',
         health: '/health'
@@ -216,7 +192,7 @@ function getPlaygroundHTML() {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>GraphQL Playground - D1 Edition</title>
+  <title>GraphQL Playground</title>
   <style>
     * {
       margin: 0;
@@ -244,16 +220,6 @@ function getPlaygroundHTML() {
     .subtitle {
       color: #666;
       margin-bottom: 30px;
-    }
-    .badge {
-      display: inline-block;
-      background: #4caf50;
-      color: white;
-      padding: 4px 12px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 600;
-      margin-left: 10px;
     }
     .section {
       margin-bottom: 30px;
@@ -326,18 +292,18 @@ function getPlaygroundHTML() {
 </head>
 <body>
   <div class="container">
-    <h1>🚀 GraphQL API Playground <span class="badge">D1 数据库</span></h1>
-    <p class="subtitle">YJP Cloudflare Workers GraphQL API with D1 Database</p>
+    <h1>🚀 GraphQL API Playground</h1>
+    <p class="subtitle">YJP Cloudflare Workers GraphQL API</p>
     
     <div class="section">
       <h2>📍 API 端点</h2>
-      <div class="endpoint">POST /graphql - GraphQL 查询和变更</div>
-      <div class="endpoint">GET /health - 健康检查（包含数据库状态）</div>
+      <div class="endpoint">POST /graphql</div>
+      <div class="endpoint">GET /health</div>
     </div>
 
     <div class="section">
       <h2>📝 示例查询 (Queries)</h2>
-      <pre><code># 获取所有用户（从 D1 数据库）
+      <pre><code># 获取所有用户
 query {
   users {
     id
@@ -353,7 +319,6 @@ query {
     id
     name
     email
-    createdAt
   }
 }
 
@@ -365,7 +330,7 @@ query {
 
     <div class="section">
       <h2>✏️ 示例变更 (Mutations)</h2>
-      <pre><code># 创建新用户（保存到 D1 数据库）
+      <pre><code># 创建新用户
 mutation {
   createUser(name: "王五", email: "wangwu@example.com") {
     id
@@ -373,23 +338,7 @@ mutation {
     email
     createdAt
   }
-}
-
-# 使用变量创建用户
-mutation CreateUser($name: String!, $email: String!) {
-  createUser(name: $name, email: $email) {
-    id
-    name
-    email
-    createdAt
-  }
-}
-
-# 变量（在单独的 JSON 中发送）:
-# {
-#   "name": "赵六",
-#   "email": "zhaoliu@example.com"
-# }</code></pre>
+}</code></pre>
     </div>
 
     <div class="section test-section">
@@ -399,7 +348,6 @@ mutation CreateUser($name: String!, $email: String!) {
     id
     name
     email
-    createdAt
   }
 }</textarea>
       <button onclick="executeQuery()">执行查询</button>
@@ -407,11 +355,36 @@ mutation CreateUser($name: String!, $email: String!) {
     </div>
 
     <div class="section">
-      <h2>💾 数据持久化</h2>
-      <p>✅ 使用 Cloudflare D1 SQLite 数据库</p>
-      <p>✅ 数据永久保存，不会因 Worker 重启而丢失</p>
-      <p>✅ 全球分布式，低延迟访问</p>
-      <p>✅ 支持复杂 SQL 查询</p>
+      <h2>🔧 使用 cURL 测试</h2>
+      <pre><code>curl -X POST \\
+  -H "Content-Type: application/json" \\
+  -d '{"query":"{ users { id name email } }"}' \\
+  https://your-worker.workers.dev/graphql</code></pre>
+    </div>
+
+    <div class="section">
+      <h2>💻 在前端中使用</h2>
+      <pre><code>// 使用 fetch API
+const response = await fetch('https://your-worker.workers.dev/graphql', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    query: \`
+      query {
+        users {
+          id
+          name
+          email
+        }
+      }
+    \`
+  })
+});
+
+const data = await response.json();
+console.log(data);</code></pre>
     </div>
   </div>
 

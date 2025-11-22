@@ -172,13 +172,56 @@ yjp-cloudeflare-workers/
 
 ## 注意事项
 
-1. 当前使用内存存储数据，Worker 重启后数据会丢失
-2. 生产环境建议使用 Cloudflare D1 或 KV 存储
-3. 已配置 CORS 允许所有来源，生产环境请根据需要限制
+### ⚠️ 数据存储
+
+**当前版本：内存存储（仅用于开发测试）**
+
+- ❌ Worker 重启后数据会丢失
+- ❌ 每个 Worker 实例数据独立
+- ❌ 不适合生产环境
+
+**生产环境推荐：Cloudflare D1 数据库**
+
+我们已经为你准备好了完整的 D1 迁移方案：
+
+1. 📖 **[数据存储方案指南](./STORAGE_GUIDE.md)** - 了解 D1、KV、Durable Objects 的区别和使用场景
+2. 🚀 **[D1 快速迁移指南](./D1_MIGRATION.md)** - 一步步将项目迁移到 D1 数据库
+3. 📄 **[schema.sql](./schema.sql)** - D1 数据库表结构
+4. 💻 **[src/index-d1.js](./src/index-d1.js)** - 使用 D1 的完整代码实现
+
+**快速开始使用 D1：**
+
+```bash
+# 1. 创建数据库
+npx wrangler d1 create yjp-database
+
+# 2. 初始化表结构
+npx wrangler d1 execute yjp-database --local --file=./schema.sql
+
+# 3. 切换到 D1 版本
+cp src/index.js src/index-memory.js  # 备份
+cp src/index-d1.js src/index.js      # 使用 D1 版本
+
+# 4. 测试
+npm run dev
+```
+
+详细步骤请查看 [D1_MIGRATION.md](./D1_MIGRATION.md)
+
+### CORS 配置
+
+已配置 CORS 允许所有来源访问，生产环境请根据需要限制。
 
 ## 下一步
 
-- [ ] 集成 Cloudflare D1 数据库
+- [x] 集成 Cloudflare D1 数据库（已准备好迁移方案）
 - [ ] 添加身份验证
-- [ ] 添加更多 API 功能
+- [ ] 添加更多 API 功能（分页、搜索、排序）
 - [ ] 添加单元测试
+
+## 相关文档
+
+- 📖 [数据存储方案指南](./STORAGE_GUIDE.md)
+- 🚀 [D1 快速迁移指南](./D1_MIGRATION.md)
+- 🌐 [Cloudflare Workers 文档](https://developers.cloudflare.com/workers/)
+- 🗄️ [Cloudflare D1 文档](https://developers.cloudflare.com/d1/)
