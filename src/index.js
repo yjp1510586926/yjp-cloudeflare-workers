@@ -42,6 +42,14 @@ const resolvers = {
       const result = await env.DB.prepare('INSERT INTO users (name, email) VALUES (?, ?) RETURNING id, name, email, created_at as createdAt').bind(name, email).first();
       return { data: { createUser: result } };
     } catch (e) { return { errors: [{ message: e.message }] }; }
+  },
+
+  deleteUser: async (env, { id }) => {
+    try {
+      const result = await env.DB.prepare('DELETE FROM users WHERE id = ? RETURNING id, name, email').bind(id).first();
+      if (!result) return { errors: [{ message: 'User not found' }] };
+      return { data: { deleteUser: result } };
+    } catch (e) { return { errors: [{ message: e.message }] }; }
   }
 };
 
@@ -58,6 +66,10 @@ async function handleGraphQL(query, variables, env) {
       const name = variables.name || content.match(/name:\s*"([^"]+)"/)?.[1];
       const email = variables.email || content.match(/email:\s*"([^"]+)"/)?.[1];
       return (name && email) ? resolvers.createUser(env, { name, email }) : { errors: [{ message: 'Missing args' }] };
+    }
+    if (content.includes('deleteUser')) {
+      const id = variables.id || content.match(/id:\s*"([^"]+)"/)?.[1];
+      return id ? resolvers.deleteUser(env, { id }) : { errors: [{ message: 'Missing ID' }] };
     }
     return { errors: [{ message: 'Query not supported' }] };
   } catch (e) { return { errors: [{ message: e.message }] }; }
